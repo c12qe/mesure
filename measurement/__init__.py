@@ -14,11 +14,20 @@ from tqdm.notebook import tqdm
 from qcodes.instrument_drivers.QDevil.QDevil_QDAC import *
 from qcodes.instrument_drivers.Keysight.Keysight_34410A_submodules import *
 
-from qcodes.dataset.plotting import plot_dataset
 import time
 
 
 def exception_handler_general(func):
+    
+    """Decorator function to handle general case exceptions, so that
+       no instrument remains open in the case of an error, KeyboardInterrupt or SystemExit.
+
+    Args:
+        func: A callable function.
+
+   Returns:
+        bool: The return of func if successful. False if unsuccessful.
+    """
     def inner_function(*args, **kwargs):
         self_arg = args[0] # First argument is the self
         try:
@@ -26,14 +35,18 @@ def exception_handler_general(func):
         except Exception as e:
             print(f"Error! What went wrong is {e}.")
             self_arg.close_connections()
+            return False
+
 
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
             self_arg.close_connections()
-
+            return False
 
         except SystemExit:
             print("SystemExit")
+            return False
+
 
             self_arg.close_connections()
 
@@ -41,6 +54,14 @@ def exception_handler_general(func):
 
 
 def exception_handler_on_close(func):
+    """Decorator function to handle exceptions that occur when closing the connection to the measurement instruments.
+
+    Args:
+        func: A callable function.
+   
+    Returns:
+        bool: The return of func if successful. False if unsuccessful.
+    """
     def inner_function(*args, **kwargs):
         try:
             func(*args, **kwargs)
@@ -49,31 +70,27 @@ def exception_handler_on_close(func):
     return inner_function
 
 class MultiChannelDevice:
+    """Class to create multichannel device object for measurement sweeps.
+
+    Args:
+            qdac_visa (string): the visa address of the QDAC.
+            dmm_visa (string): the visa a
+            print_dac_overview (bool): Whether to print an overview of the DAC channels. Defaults to True.
+    """
 
     @exception_handler_general
     def __init__(self, qdac_visa, dmm_visa, print_dac_overview=True):
-
+        """Function to initialise instance of class. """
 
         t = time.localtime()
         current_time = time.strftime("%H:%M:%S", t)
-        # try self.qdac:
-        #     print("QDAC was not closed properly - using the already open instance.")
-        #     self.dac_open = True
 
-        # except:
-        # print(globals())
-
-  
         self.qdac = QDac(name = 'qdac', address= qdac_visa, update_currents=False)
         self.dac_open = True
-
-        
-
 
         print(f"Connected to QDAC on {qdac_visa} at {current_time}.")
         self.dmm = Keysight_34410A('DMM', address=dmm_visa)
         self.dmm_open = True
-
 
         self.qdac.reset()
 
@@ -89,6 +106,16 @@ class MultiChannelDevice:
             print(self.qdac.print_overview(update_currents=True))
 
     def waiting_time(self, current,prev, slope=1):   
+        """The ramptime to use betweem the ramping between two voltages.
+
+        Args:
+            current (float): the current voltage that you want to update to.
+            prev (float):the previous voltage that you want to update from
+            slope (float): the rate of voltage change in V/s. Defaults to 1.
+
+        Returns:
+            float: the ramptime to use for ramping the voltage on a channel.
+        """
 
         time = np.abs(current-prev)/slope
         if time < 0.002:
@@ -96,19 +123,34 @@ class MultiChannelDevice:
         else:
             return time
 
-
-
-
     @exception_handler_general   
-    def dc_2d_gate_sweep(self, channel_number_1, channel_number_2, device_name ="test_device", database_file="test_measurements.db", max_voltage_ch1=1, min_voltage_ch1 = 0,max_voltage_ch2=1, min_voltage_ch2 = 0, 
-                    number_of_steps_ch1 = 100,number_of_steps_ch2 = 10):
+    def dc_2d_gate_sweep(self, channel_number_1, channel_number_2, experiment_name="test", device_name ="test_device", database_file="test_measurements.db", max_voltage_ch1=1, min_voltage_ch1 = 0,max_voltage_ch2=1, min_voltage_ch2 = 0, 
+                    number_of_steps_ch1 = 100,number_of_steps_ch2 = 100):
+        """Function to perform a measurement sweep of 2 gates on the device.
+
+        Args:
+            channel_number_1 (int): The channel number associated with the 1st channel.
+            channel_number_2 (int): The channel number associated with the 2nd channel.
+            experiment_name (str): The name of the experiment which tp associate this measurment with. Defaults to "test".
+            device_name (str): The name of your device. Defaults to "test_device".
+            database_file (str): The name of the database file to which you want to save your results. Defaults to "test_measurements.db".
+            max_voltage_ch1 (float): The maximum voltage to sweep your 1st channel to. Defaults to 1.
+            min_voltage_ch1 (float): The minimum voltage to sweep your 1st channel to. Defaults to 0.
+            max_voltage_ch2 (float): The maximum voltage to sweep your 2nd channel to. Defaults to 1.
+            min_voltage_ch2 (float): The minimum voltage to sweep your 2nd channel from. Defaults to 0.
+            number_of_steps_ch1 (int): The number of measurement steps to use during the voltage sweep for the 1st channel. Defaults to 100.
+            number_of_steps_ch2 (int):  The number of measurement steps to use during the voltage sweep for the 2nd channel. Defaults to 100.
+
+        Returns:
+            str: The local path to the database file to which the measurement was saved.
+        """
         int_time = self.dmm.get("NPLC") / 50 # The integration time -> time taken to perform a measurement.
 
-        initialise_or_create_database_at(f"./qcodes_measurements/{database_file}")
+        initialise_or_create_database_at(f"./measurement_results/{database_file}")
 
         # You can only have 1 db at a time
         test_exp = load_or_create_experiment(
-        experiment_name="1d_sweep",
+        experiment_name=experiment_name,
         sample_name=device_name)
 
         # Perform concatination and use eval to store the .v methods for the channel numbers passed as arugments
@@ -129,7 +171,7 @@ class MultiChannelDevice:
 
         # The Measurement object is used to obtain data from instruments in QCoDeS, 
         # It is instantiated with both an experiment (to handle data) and station to control the instruments.
-        context_meas = Measurement(exp=test_exp, station=station, name='context') # create a new meaurement object using the station defined above.
+        context_meas = Measurement(exp=test_exp, station=station, name='2d_sweep') # create a new meaurement object using the station defined above.
 
 
         # Register the independent parameters...
@@ -139,7 +181,7 @@ class MultiChannelDevice:
 
         # ...then register the dependent parameters
         context_meas.register_parameter(self.dmm.volt, setpoints=(channel_number_1_v_function, 
-                                                                    channel_number_1_v_function))
+                                                                    channel_number_2_v_function))
 
         # Time for periodic background database writes
         context_meas.write_period = 2
@@ -148,8 +190,7 @@ class MultiChannelDevice:
         outter_bar = tqdm(range(number_of_steps_ch1), desc = f"Channel {channel_number_1} progress:",  position=0, leave=True)
         inner_bar = tqdm(range(number_of_steps_ch2), desc = f"Channel {channel_number_2} progress:", position=1, leave=True)
         
-        with context_meas.run() as datasaver: # initialise measurement run
-            
+        with context_meas.run() as datasaver: # initialise measurement run 
 
             for index_1, set_v_ch1 in enumerate(voltages_ch1): # for each voltage that we want to set on the qdac for channel '1'
 
@@ -183,8 +224,6 @@ class MultiChannelDevice:
             duration_exit = self.qdac.ramp_voltages([channel_number_1,channel_number_2],[],[0,0],self.waiting_time(0,voltages_ch2[-1])+self.waiting_time(0,voltages_ch1[-1]))
             time.sleep(duration_exit)
 
-
-
         # Convenient to have for plotting and data access
         dataset = datasaver.dataset
 
@@ -192,18 +231,33 @@ class MultiChannelDevice:
           
         return  qc.config.core.db_location # the location of the db file.
 
-
     @exception_handler_general   
-    def dc_1d_gate_sweep(self, channel_number_1, channel_number_2, device_name ="test_device", database_file="test_measurements.db", fixed_voltage_ch1=0, max_voltage_ch2=1, min_voltage_ch2 = 0, 
+    def dc_1d_gate_sweep(self, channel_number_1, channel_number_2, experiment_name="test", device_name ="test_device", database_file="test_measurements.db", fixed_voltage_ch1=0, max_voltage_ch2=1, min_voltage_ch2 = 0, 
         number_of_steps_ch2 = 100):
+        """Function to perform a measurement sweep of 1 of the gates on the device, whilst keeping the others fixed.
+
+        Args:
+            channel_number_1 (int): The channel number associated with the 1st channel.
+            channel_number_2 (int): The channel number associated with the 2nd channel.
+            experiment_name (str): The name of the experiment which tp associate this measurment with. Defaults to "test".
+            device_name (str): The name of your device. Defaults to "test_device".
+            database_file (str): The name of the database file to which you want to save your results. Defaults to "test_measurements.db".
+            fixed_voltage_ch1 (float): The fixed voltage to use for the 1st channel.
+            max_voltage_ch2 (float): The maximum voltage to sweep your 2nd channel to. Defaults to 1.
+            min_voltage_ch2 (float): The minimum voltage to sweep your 2nd channel from. Defaults to 0.
+            number_of_steps_ch2 (int):  The number of measurement steps to use during the voltage sweep for the 2nd channel. Defaults to 100.
+
+        Returns:
+            str: The local path to the database file to which the measurement was saved.
+        """
 
         int_time = self.dmm.get("NPLC") / 50 # The integration time -> time taken to perform a measurement.
 
-        initialise_or_create_database_at(f"./qcodes_measurements/{database_file}")
+        initialise_or_create_database_at(f"./measurement_results/{database_file}")
 
         # You can only have 1 db at a time
         test_exp = load_or_create_experiment(
-        experiment_name="1d_sweep",
+        experiment_name=experiment_name,
         sample_name=device_name)
 
         # Perform concatination and use eval to store the .v methods for the channel numbers passed as arugments
@@ -211,7 +265,6 @@ class MultiChannelDevice:
         channel_number_2_abrev = "self.qdac.ch" + str(channel_number_2) + ".v"
         channel_number_1_v_function = eval(channel_number_1_abrev)
         channel_number_2_v_function = eval(channel_number_2_abrev)
-
 
         # create a numpy array with all the voltages to be set on channel 2
         voltages_ch2 = np.linspace(min_voltage_ch2, max_voltage_ch2, number_of_steps_ch2)
@@ -224,17 +277,15 @@ class MultiChannelDevice:
 
         # The Measurement object is used to obtain data from instruments in QCoDeS, 
         # It is instantiated with both an experiment (to handle data) and station to control the instruments.
-        context_meas = Measurement(exp=test_exp, station=station, name='context') # create a new meaurement object using the station defined above.
-
+        context_meas = Measurement(exp=test_exp, station=station, name='1d_sweep') # create a new meaurement object using the station defined above.
 
         # Register the independent parameters...
         context_meas.register_parameter(channel_number_1_v_function)
         context_meas.register_parameter(channel_number_2_v_function)
 
-
         # ...then register the dependent parameters
         context_meas.register_parameter(self.dmm.volt, setpoints=(channel_number_1_v_function, 
-                                                                    channel_number_1_v_function))
+                                                                    channel_number_2_v_function))
 
         # Time for periodic background database writes
         context_meas.write_period = 2
@@ -244,11 +295,8 @@ class MultiChannelDevice:
         
         with context_meas.run() as datasaver: # initialise measurement run
             
-
-
             # Ramp the voltage up slowly using the waiting time function to ensure that the specified slope (default = 1) is not exceeded.
             duration_1 = self.qdac.ramp_voltages([channel_number_1,],[],[fixed_voltage_ch1,],self.waiting_time(fixed_voltage_ch1,channel_number_1_v_function.get()))
-
 
             time.sleep(duration_1) # Wait some time after setting the channel '1' voltage.
 
@@ -260,7 +308,6 @@ class MultiChannelDevice:
 
                 duration_2 = self.qdac.ramp_voltages([channel_number_2,],[],[set_v_ch2,],self.waiting_time(set_v_ch2,voltages_ch2[index_2-1]))
                 bar.update(1) 
-
 
                 time.sleep(duration_2 + 3*int_time) # wait some time including the additional integration time of our DMM.
 
@@ -275,18 +322,20 @@ class MultiChannelDevice:
             duration_exit = self.qdac.ramp_voltages([channel_number_1,channel_number_2],[],[0,0],self.waiting_time(0,voltages_ch2[-1])+self.waiting_time(0,channel_number_1_v_function.get()))
             time.sleep(duration_exit)
 
-
-
         # Convenient to have for plotting and data access
         dataset = datasaver.dataset
           
         print("Measurement complete.")
 
-
         return  qc.config.core.db_location # the location of the db file.
 
     @exception_handler_on_close
     def close_connections(self):
+        """Function to close the connections to the connected measurment equipment.
+
+        Returns:
+            bool: True if connnections successfully closed.
+        """
         if self.dac_open:
             self.qdac.close()
             self.dac_open = False
