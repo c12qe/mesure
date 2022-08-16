@@ -49,7 +49,6 @@ class Analyser:
         )
         print(f"The datasets collected for the '{experiment_name}' experiment are:")
         print(exp.data_sets())
-        return True
     
     def display_experiment_dataset(self, experiment_name ="test_device", run_id=1):
         """Function to visualise a given run id for an experiment found in the database specified in the object definition.
@@ -65,7 +64,6 @@ class Analyser:
 
         print(df.head())
         plot_dataset(dataset)
-        return True
 
       
           

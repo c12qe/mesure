@@ -1,3 +1,4 @@
+from logging import exception
 import pyvisa as visa
 import numpy as np
 import matplotlib.pyplot as plt
@@ -35,17 +36,14 @@ def exception_handler_general(func):
         except Exception as e:
             print(f"Error! What went wrong is {e}.")
             self_arg.close_connections()
-            return False
 
 
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
             self_arg.close_connections()
-            return False
 
         except SystemExit:
             print("SystemExit")
-            return False
 
 
             self_arg.close_connections()
@@ -69,7 +67,7 @@ def exception_handler_on_close(func):
             print(f"Error! What went wrong is {e}.")
     return inner_function
 
-class MultiChannelDevice:
+class Device:
     """Class to create multichannel device object for measurement sweeps.
 
     Args:
@@ -79,11 +77,13 @@ class MultiChannelDevice:
     """
 
     @exception_handler_general
-    def __init__(self, qdac_visa, dmm_visa, print_dac_overview=True):
+    def __init__(self, qdac_visa, dmm_visa, print_dac_overview=True, connected_channels=[], investigation_channels=[]):
         """Function to initialise instance of class. """
 
         t = time.localtime()
         current_time = time.strftime("%H:%M:%S", t)
+        self.connected_channels=connected_channels
+        self.investigation_channels=investigation_channels
 
         self.qdac = QDac(name = 'qdac', address= qdac_visa, update_currents=False)
         self.dac_open = True
@@ -122,6 +122,29 @@ class MultiChannelDevice:
             return 0.002
         else:
             return time
+
+    @exception_handler_general
+    def set_channel_voltage(self,channel_number, voltage_value=0.0):
+        channel_number_abrev = "self.qdac.ch" + str(channel_number) + ".v"
+        channel_number_v_function = eval(channel_number_abrev)
+
+        duration = self.qdac.ramp_voltages([channel_number,],[],[voltage_value,],self.waiting_time(voltage_value,channel_number_v_function.get()))
+        time.sleep(duration) # Wait some time after setting the channel voltage.
+        return True
+
+    @exception_handler_general
+    def get_channel_voltage(self,channel_number):
+        channel_number_abrev = "self.qdac.ch" + str(channel_number) + ".v"
+        channel_number_v_function = eval(channel_number_abrev)
+        return channel_number_v_function.get()
+
+    @exception_handler_general
+    def get_current(self):
+        # Need to see how we actually measure current first. Add VNA functionality too.
+        return self.dmm.volt.get()
+    
+
+
 
     @exception_handler_general   
     def dc_2d_gate_sweep(self, channel_number_1, channel_number_2, experiment_name="test", device_name ="test_device", database_file="test_measurements.db", max_voltage_ch1=1, min_voltage_ch1 = 0,max_voltage_ch2=1, min_voltage_ch2 = 0, 
@@ -192,26 +215,23 @@ class MultiChannelDevice:
         
         with context_meas.run() as datasaver: # initialise measurement run 
 
-            for index_1, set_v_ch1 in enumerate(voltages_ch1): # for each voltage that we want to set on the qdac for channel '1'
+            for set_v_ch1 in voltages_ch1: # for each voltage that we want to set on the qdac for channel '1'
 
                 # Ramp the voltage up slowly using the waiting time function to ensure that the specified slope (default = 1) is not exceeded.
-                duration_1 = self.qdac.ramp_voltages([channel_number_1,],[],[set_v_ch1,],self.waiting_time(set_v_ch1,voltages_ch1[index_1-1]))
+                self.set_channel_voltage(channel_number_1, set_v_ch1)
                 outter_bar.update(1) # update outer progress bar
 
-                time.sleep(duration_1) # Wait some time after setting the channel '1' voltage.
                 inner_bar.reset()
 
-                for index_2, set_v_ch2 in enumerate(voltages_ch2):
+                for set_v_ch2 in voltages_ch2:
 
                     # Slowly ramp up channel '2' from current voltage to current iteration voltage.
                     # Note: doNd was not used because it still gave a ramptime warning, using this method of the ramp_voltages to perform the sweep 
                     # eliminates the warning so we are sure that we won't accidently use too high a slope for our device.
+                    self.set_channel_voltage(channel_number_2, set_v_ch2)
 
-                    duration_2 = self.qdac.ramp_voltages([channel_number_2,],[],[set_v_ch2,],self.waiting_time(set_v_ch2,voltages_ch2[index_2-1]))
                     inner_bar.update(1) 
-
-
-                    time.sleep(duration_2 + 3*int_time) # wait some time including the additional integration time of our DMM.
+                    time.sleep(3*int_time) # wait some time including the additional integration time of our DMM.
 
                     get_v = self.dmm.volt.get()
 
@@ -221,8 +241,10 @@ class MultiChannelDevice:
                                             (self.dmm.volt, get_v))
                     
             # Ramp down the voltages to zero so a voltage is not left on the device.
-            duration_exit = self.qdac.ramp_voltages([channel_number_1,channel_number_2],[],[0,0],self.waiting_time(0,voltages_ch2[-1])+self.waiting_time(0,voltages_ch1[-1]))
-            time.sleep(duration_exit)
+            self.set_channel_voltage(channel_number_1, 0.0)
+            self.set_channel_voltage(channel_number_2, 0.0)
+
+
 
         # Convenient to have for plotting and data access
         dataset = datasaver.dataset
@@ -296,20 +318,18 @@ class MultiChannelDevice:
         with context_meas.run() as datasaver: # initialise measurement run
             
             # Ramp the voltage up slowly using the waiting time function to ensure that the specified slope (default = 1) is not exceeded.
-            duration_1 = self.qdac.ramp_voltages([channel_number_1,],[],[fixed_voltage_ch1,],self.waiting_time(fixed_voltage_ch1,channel_number_1_v_function.get()))
+            self.set_channel_voltage(channel_number_1, fixed_voltage_ch1)
 
-            time.sleep(duration_1) # Wait some time after setting the channel '1' voltage.
-
-            for index_2, set_v_ch2 in enumerate(voltages_ch2):
+            for set_v_ch2 in voltages_ch2:
 
                 # Slowly ramp up channel '2' from current voltage to current iteration voltage.
                 # Note: doNd was not used because it still gave a ramptime warning, using this method of the ramp_voltages to perform the sweep 
                 # eliminates the warning so we are sure that we won't accidently use too high a slope for our device.
 
-                duration_2 = self.qdac.ramp_voltages([channel_number_2,],[],[set_v_ch2,],self.waiting_time(set_v_ch2,voltages_ch2[index_2-1]))
+                self.set_channel_voltage(channel_number_1, set_v_ch2)
                 bar.update(1) 
 
-                time.sleep(duration_2 + 3*int_time) # wait some time including the additional integration time of our DMM.
+                time.sleep(3*int_time) # wait some time including the additional integration time of our DMM.
 
                 get_v = self.dmm.volt.get()
 
@@ -319,8 +339,8 @@ class MultiChannelDevice:
                                         (self.dmm.volt, get_v))
                     
             # Ramp down the voltages to zero so a voltage is not left on the device.
-            duration_exit = self.qdac.ramp_voltages([channel_number_1,channel_number_2],[],[0,0],self.waiting_time(0,voltages_ch2[-1])+self.waiting_time(0,channel_number_1_v_function.get()))
-            time.sleep(duration_exit)
+            self.set_channel_voltage(channel_number_1, 0.0)
+            self.set_channel_voltage(channel_number_2, 0.0)
 
         # Convenient to have for plotting and data access
         dataset = datasaver.dataset
@@ -328,6 +348,43 @@ class MultiChannelDevice:
         print("Measurement complete.")
 
         return  qc.config.core.db_location # the location of the db file.
+
+
+    def jump (self, params,inv=False):
+        """_summary_
+
+        Args:
+            params (list): The voltages to set on your channels.
+            inv (bool): Should the investigation gates (typically plunger gates) should be used. Defaults to False.
+
+        Returns:
+            list: The params the channels were set to.
+        """
+        if inv:
+            labels = self.investigation_channels #plunger gates
+        else:
+            labels = self.connected_channels #all gates
+            
+        assert len(params) == len(labels) #params needs to be the same length as labels
+        for i in range(len(params)):
+            self.set_channel_voltage(labels[i],params[i]) #function that takes dac key and value and sets dac to that value
+        return params
+
+    def check(self, inv=True):
+        
+        if inv:
+            labels = self.investigation_channels #plunger gates
+        else:
+            labels =self.connected_channels #all gates
+        dac_state = [None]*len(labels)
+        for i in range(len(labels)):
+            dac_state[i] = self.get_channel_voltage(labels[i]) #function that takes dac key and returns state that channel is in
+        return dac_state
+
+    def measure(self):
+        current = self.get_current() #receive a single current measurement from the daq
+        return current
+    
 
     @exception_handler_on_close
     def close_connections(self):
