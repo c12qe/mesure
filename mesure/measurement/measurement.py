@@ -240,16 +240,17 @@ class Device:
                                             (channel_number_2_v_function, set_v_ch2),
                                             (self.dmm.volt, get_v))
                     
+            
+            print("Measurement complete.")
+
             # Ramp down the voltages to zero so a voltage is not left on the device.
-            self.set_channel_voltage(channel_number_1, 0.0)
-            self.set_channel_voltage(channel_number_2, 0.0)
+            for channel_num in range(1,25):
+                self.set_channel_voltage(channel_num, 0.0)
 
 
+        # # Convenient to have for plotting and data access
+        # dataset = datasaver.dataset
 
-        # Convenient to have for plotting and data access
-        dataset = datasaver.dataset
-
-        print("Measurement complete.")
           
         return  qc.config.core.db_location # the location of the db file.
 
@@ -339,11 +340,11 @@ class Device:
                                         (self.dmm.volt, get_v))
                     
             # Ramp down the voltages to zero so a voltage is not left on the device.
-            self.set_channel_voltage(channel_number_1, 0.0)
-            self.set_channel_voltage(channel_number_2, 0.0)
-
-        # Convenient to have for plotting and data access
-        dataset = datasaver.dataset
+            for channel_num in range(1,25):
+                self.set_channel_voltage(channel_num, 0.0)
+                
+        # # Convenient to have for plotting and data access
+        # dataset = datasaver.dataset
           
         print("Measurement complete.")
 

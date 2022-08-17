@@ -2,8 +2,8 @@ import setuptools
 with open("README.md", "r") as fh:
     long_description = fh.read()
 setuptools.setup(
-    name="joelpendleton", # Replace with your own username
-    version="0.0.1",
+    name="mesure-c12", 
+    version="0.0.2",
     author="Joel Pendleton",
     author_email="contact@joelpendleton.com",
     description="A package to enable easy measurent, analysis and control of quantum dot experiments.",
@@ -16,5 +16,5 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    python_requires='=3.9.12',
+    python_requires='==3.9.12',
 )

@@ -1,4 +1,8 @@
 __pycache__ 
 measurement/__pycache__
 analysis/__pycache__
-measurement_results
+measurement_results]
+.ipynb_checkpoints
+build
+dist
+mesure_c12.egg-info
