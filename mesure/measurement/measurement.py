@@ -125,7 +125,7 @@ class Device:
 
     @exception_handler_general
     def set_channel_voltage(self,channel_number, voltage_value=0.0):
-        channel_number_abrev = "self.qdac.ch" + str(channel_number) + ".v"
+        channel_number_abrev = "self.qdac.ch{:02d}.v".format(channel_number)
         channel_number_v_function = eval(channel_number_abrev)
 
         duration = self.qdac.ramp_voltages([channel_number,],[],[voltage_value,],self.waiting_time(voltage_value,channel_number_v_function.get()))
@@ -177,8 +177,8 @@ class Device:
         sample_name=device_name)
 
         # Perform concatination and use eval to store the .v methods for the channel numbers passed as arugments
-        channel_number_1_abrev = "self.qdac.ch" + str(channel_number_1) + ".v"
-        channel_number_2_abrev = "self.qdac.ch" + str(channel_number_2) + ".v"
+        channel_number_1_abrev = "self.qdac.ch{:02d}.v".format(channel_number_1)
+        channel_number_2_abrev ="self.qdac.ch{:02d}.v".format(channel_number_2)
         channel_number_1_v_function = eval(channel_number_1_abrev)
         channel_number_2_v_function = eval(channel_number_2_abrev)
 
@@ -284,9 +284,7 @@ class Device:
         sample_name=device_name)
 
         # Perform concatination and use eval to store the .v methods for the channel numbers passed as arugments
-        channel_number_1_abrev = "self.qdac.ch" + str(channel_number_1) + ".v"
-        channel_number_2_abrev = "self.qdac.ch" + str(channel_number_2) + ".v"
-        channel_number_1_v_function = eval(channel_number_1_abrev)
+        channel_number_2_abrev = "self.qdac.ch{:02d}.v".format(channel_number_2)
         channel_number_2_v_function = eval(channel_number_2_abrev)
 
         # create a numpy array with all the voltages to be set on channel 2
@@ -303,12 +301,11 @@ class Device:
         context_meas = Measurement(exp=test_exp, station=station, name='1d_sweep') # create a new meaurement object using the station defined above.
 
         # Register the independent parameters...
-        context_meas.register_parameter(channel_number_1_v_function)
         context_meas.register_parameter(channel_number_2_v_function)
+        # context_meas.register_parameter(channel_number_2_v_function)
 
         # ...then register the dependent parameters
-        context_meas.register_parameter(self.dmm.volt, setpoints=(channel_number_1_v_function, 
-                                                                    channel_number_2_v_function))
+        context_meas.register_parameter(self.dmm.volt, setpoints=(channel_number_2_v_function,))
 
         # Time for periodic background database writes
         context_meas.write_period = 2
@@ -319,7 +316,7 @@ class Device:
         with context_meas.run() as datasaver: # initialise measurement run
             
             # Ramp the voltage up slowly using the waiting time function to ensure that the specified slope (default = 1) is not exceeded.
-            self.set_channel_voltage(channel_number_1, fixed_voltage_ch1)
+            # self.set_channel_voltage(channel_number_1, fixed_voltage_ch1)
 
             for set_v_ch2 in voltages_ch2:
 
@@ -327,7 +324,7 @@ class Device:
                 # Note: doNd was not used because it still gave a ramptime warning, using this method of the ramp_voltages to perform the sweep 
                 # eliminates the warning so we are sure that we won't accidently use too high a slope for our device.
 
-                self.set_channel_voltage(channel_number_1, set_v_ch2)
+                self.set_channel_voltage(channel_number_2, set_v_ch2)
                 bar.update(1) 
 
                 time.sleep(3*int_time) # wait some time including the additional integration time of our DMM.
@@ -335,8 +332,7 @@ class Device:
                 get_v = self.dmm.volt.get()
 
                 # Save the measurement results into the db.
-                datasaver.add_result((channel_number_1_v_function, fixed_voltage_ch1),
-                                        (channel_number_2_v_function, set_v_ch2),
+                datasaver.add_result((channel_number_2_v_function, set_v_ch2),
                                         (self.dmm.volt, get_v))
                     
             # Ramp down the voltages to zero so a voltage is not left on the device.
