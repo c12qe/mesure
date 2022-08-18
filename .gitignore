@@ -5,5 +5,5 @@ measurement_results]
 .ipynb_checkpoints
 build
 dist
-mesure_c12.egg-info
+mesure.egg-info
 .DS_STORE
