@@ -105,7 +105,7 @@ class Device:
             print("\nOverview of QDAC channels:\n")
             print(self.qdac.print_overview(update_currents=True))
 
-    def waiting_time(self, current,prev, slope=1):   
+    def waiting_time(self, difference, slope=1):   
         """The ramptime to use betweem the ramping between two voltages.
 
         Args:
@@ -117,26 +117,30 @@ class Device:
             float: the ramptime to use for ramping the voltage on a channel.
         """
 
-        time = np.abs(current-prev)/slope
+        time = np.abs(difference)/slope
         if time < 0.002:
             return 0.002
         else:
             return time
 
     @exception_handler_general
-    def set_channel_voltage(self,channel_number, voltage_value=0.0):
-        channel_number_abrev = "self.qdac.ch{:02d}.v".format(channel_number)
-        channel_number_v_function = eval(channel_number_abrev)
-
-        duration = self.qdac.ramp_voltages([channel_number,],[],[voltage_value,],self.waiting_time(voltage_value,channel_number_v_function.get()))
+    def set_channel_voltage(self,*channels, voltages):
+        assert len(channels) == len(voltages) # Number of channels and voltages must be the same.
+        # produce a list of the current voltages for each channel
+        current_voltages = self.get_channel_voltage(channels)
+        max_voltage_difference = max(current_voltages - voltages)
+        duration = self.qdac.ramp_voltages(channels,current_voltages,voltages,self.waiting_time(max_voltage_difference))
         time.sleep(duration) # Wait some time after setting the channel voltage.
         return True
 
     @exception_handler_general
-    def get_channel_voltage(self,channel_number):
-        channel_number_abrev = "self.qdac.ch" + str(channel_number) + ".v"
-        channel_number_v_function = eval(channel_number_abrev)
-        return channel_number_v_function.get()
+    def get_channel_voltage(self,*channels):
+        channel_voltages = []
+        for channel in channels:
+            channel_number_abrev = "self.qdac.ch" + str(channel) + ".v"
+            channel_number_v_function = eval(channel_number_abrev)
+            channel_voltages.append(channel_number_v_function.get())
+        return channel_voltages
 
     @exception_handler_general
     def get_current(self):
@@ -176,11 +180,7 @@ class Device:
         experiment_name=experiment_name,
         sample_name=device_name)
 
-        # Perform concatination and use eval to store the .v methods for the channel numbers passed as arugments
-        channel_number_1_abrev = "self.qdac.ch{:02d}.v".format(channel_number_1)
-        channel_number_2_abrev ="self.qdac.ch{:02d}.v".format(channel_number_2)
-        channel_number_1_v_function = eval(channel_number_1_abrev)
-        channel_number_2_v_function = eval(channel_number_2_abrev)
+   
 
 
         voltages_ch1 = np.linspace(min_voltage_ch1, max_voltage_ch1, number_of_steps_ch1) # create a numpy array with all the voltages to be set on each channel
@@ -196,15 +196,22 @@ class Device:
         # It is instantiated with both an experiment (to handle data) and station to control the instruments.
         context_meas = Measurement(exp=test_exp, station=station, name='2d_sweep') # create a new meaurement object using the station defined above.
 
+        channel_set_points = []
+        results = [None] * len(self.connected_channels + 1)
 
         # Register the independent parameters...
-        context_meas.register_parameter(channel_number_1_v_function)
-        context_meas.register_parameter(channel_number_2_v_function)
+        for i, channel in enumerate(self.connected_channels):
+            # Perform concatination and use eval to store the .v methods for the channel numbers passed as arugments
+            channel_number_abrev = "self.qdac.ch{:02d}.v".format(channel)
+            channel_number_v_function = eval(channel_number_abrev)
+            channel_set_points.append(channel_number_v_function)
+            context_meas.register_parameter(channel_number_v_function)
+            if (channel != channel_number_1) or (channel != channel_number_2):
+                results[i] = ((channel_number_v_function, self.get_channel_voltage(channel)))
 
 
         # ...then register the dependent parameters
-        context_meas.register_parameter(self.dmm.volt, setpoints=(channel_number_1_v_function, 
-                                                                    channel_number_2_v_function))
+        context_meas.register_parameter(self.dmm.volt, setpoints=(channel_set_points))
 
         # Time for periodic background database writes
         context_meas.write_period = 2
@@ -212,7 +219,7 @@ class Device:
         # Define the tqdm progress bars:
         outter_bar = tqdm(range(number_of_steps_ch1), desc = f"Channel {channel_number_1} progress:",  position=0, leave=True)
         inner_bar = tqdm(range(number_of_steps_ch2), desc = f"Channel {channel_number_2} progress:", position=1, leave=True)
-        
+                  
         with context_meas.run() as datasaver: # initialise measurement run 
 
             for set_v_ch1 in voltages_ch1: # for each voltage that we want to set on the qdac for channel '1'
@@ -236,16 +243,20 @@ class Device:
                     get_v = self.dmm.volt.get()
 
                     # Save the measurement results into the db.
-                    datasaver.add_result((channel_number_1_v_function, set_v_ch1),
-                                            (channel_number_2_v_function, set_v_ch2),
-                                            (self.dmm.volt, get_v))
+
+                    # change this function to use channel number list
+                    # make a tuple of tuples not including 
+                    results[-3] = (channel_number_1_v_function, set_v_ch1)
+                    results[-2] = (channel_number_2_v_function, set_v_ch2)
+                    results[-1] = (self.dmm.volt, get_v)
+                    datasaver.add_result(results)
                     
             
             print("Measurement complete.")
 
             # Ramp down the voltages to zero so a voltage is not left on the device.
-            for channel_num in range(1,25):
-                self.set_channel_voltage(channel_num, 0.0)
+            self.set_channel_voltage(self.connected_channels, [0.0]*len(self.connected_channels))
+
 
 
         # # Convenient to have for plotting and data access
@@ -255,20 +266,18 @@ class Device:
         return  qc.config.core.db_location # the location of the db file.
 
     @exception_handler_general   
-    def dc_1d_gate_sweep(self, channel_number_1, channel_number_2, experiment_name="test", device_name ="test_device", database_file="test_measurements.db", fixed_voltage_ch1=0, max_voltage_ch2=1, min_voltage_ch2 = 0, 
-        number_of_steps_ch2 = 100):
+    def dc_1d_gate_sweep(self, sweep_channel, experiment_name="test", device_name ="test_device", database_file="test_measurements.db", max_voltage=1, min_voltage = 0, 
+        number_of_steps = 100):
         """Function to perform a measurement sweep of 1 of the gates on the device, whilst keeping the others fixed.
 
         Args:
-            channel_number_1 (int): The channel number associated with the 1st channel.
-            channel_number_2 (int): The channel number associated with the 2nd channel.
+            sweep_channel (int): The channel number associated with the sweep channel.
             experiment_name (str): The name of the experiment which tp associate this measurment with. Defaults to "test".
             device_name (str): The name of your device. Defaults to "test_device".
             database_file (str): The name of the database file to which you want to save your results. Defaults to "test_measurements.db".
-            fixed_voltage_ch1 (float): The fixed voltage to use for the 1st channel.
-            max_voltage_ch2 (float): The maximum voltage to sweep your 2nd channel to. Defaults to 1.
-            min_voltage_ch2 (float): The minimum voltage to sweep your 2nd channel from. Defaults to 0.
-            number_of_steps_ch2 (int):  The number of measurement steps to use during the voltage sweep for the 2nd channel. Defaults to 100.
+            max_voltage (float): The maximum voltage to sweep your 2nd channel to. Defaults to 1.
+            min_voltage (float): The minimum voltage to sweep your 2nd channel from. Defaults to 0.
+            number_of_steps (int):  The number of measurement steps to use during the voltage sweep for the 2nd channel. Defaults to 100.
 
         Returns:
             str: The local path to the database file to which the measurement was saved.
@@ -284,11 +293,11 @@ class Device:
         sample_name=device_name)
 
         # Perform concatination and use eval to store the .v methods for the channel numbers passed as arugments
-        channel_number_2_abrev = "self.qdac.ch{:02d}.v".format(channel_number_2)
-        channel_number_2_v_function = eval(channel_number_2_abrev)
+        channel_number_sweep_abrev = "self.qdac.ch{:02d}.v".format(sweep_channel)
+        channel_number_v_sweep_function = eval(channel_number_sweep_abrev)
 
         # create a numpy array with all the voltages to be set on channel 2
-        voltages_ch2 = np.linspace(min_voltage_ch2, max_voltage_ch2, number_of_steps_ch2)
+        voltages_sweep = np.linspace(min_voltage, max_voltage, number_of_steps)
         
         # produce a station object to store the instruments to be used during the experiment
         station = qc.Station()
@@ -300,50 +309,61 @@ class Device:
         # It is instantiated with both an experiment (to handle data) and station to control the instruments.
         context_meas = Measurement(exp=test_exp, station=station, name='1d_sweep') # create a new meaurement object using the station defined above.
 
+        channel_set_points = []
+        results = [None] * len(self.connected_channels + 1)
+
         # Register the independent parameters...
-        context_meas.register_parameter(channel_number_2_v_function)
-        # context_meas.register_parameter(channel_number_2_v_function)
+        for i, channel in enumerate(self.connected_channels):
+            # Perform concatination and use eval to store the .v methods for the channel numbers passed as arugments
+            channel_number_abrev = "self.qdac.ch{:02d}.v".format(channel)
+            channel_number_v_function = eval(channel_number_abrev)
+            channel_set_points.append(channel_number_v_function)
+            context_meas.register_parameter(channel_number_v_function)
+            if (channel != sweep_channel):
+                results[i] = ((channel_number_v_function, self.get_channel_voltage(channel)))
+
 
         # ...then register the dependent parameters
-        context_meas.register_parameter(self.dmm.volt, setpoints=(channel_number_2_v_function,))
+        context_meas.register_parameter(self.dmm.volt, setpoints=(channel_set_points))
 
         # Time for periodic background database writes
         context_meas.write_period = 2
 
         # Define the tqdm progress bars:
-        bar = tqdm(range(number_of_steps_ch2), desc = f"Channel {channel_number_2} progress:",  position=0, leave=True)
-        
-        with context_meas.run() as datasaver: # initialise measurement run
-            
-            # Ramp the voltage up slowly using the waiting time function to ensure that the specified slope (default = 1) is not exceeded.
-            # self.set_channel_voltage(channel_number_1, fixed_voltage_ch1)
+        outter_bar = tqdm(range(sweep_channel), desc = f"Channel {sweep_channel} progress:",  position=0, leave=True)
+                  
+        with context_meas.run() as datasaver: # initialise measurement run 
 
-            for set_v_ch2 in voltages_ch2:
+            for set_v in voltages_sweep: # for each voltage that we want to set on the qdac for channel '1'
 
-                # Slowly ramp up channel '2' from current voltage to current iteration voltage.
-                # Note: doNd was not used because it still gave a ramptime warning, using this method of the ramp_voltages to perform the sweep 
-                # eliminates the warning so we are sure that we won't accidently use too high a slope for our device.
+                # Ramp the voltage up slowly using the waiting time function to ensure that the specified slope (default = 1) is not exceeded.
+                self.set_channel_voltage(sweep_channel, set_v)
+                outter_bar.update(1) # update outer progress bar
 
-                self.set_channel_voltage(channel_number_2, set_v_ch2)
-                bar.update(1) 
-
-                time.sleep(3*int_time) # wait some time including the additional integration time of our DMM.
 
                 get_v = self.dmm.volt.get()
 
+
+                # change this function to use channel number list
+                # make a tuple of tuples not including 
+                results[-2] = (channel_number_v_sweep_function, set_v)
+                results[-1] = (self.dmm.volt, get_v)
+
                 # Save the measurement results into the db.
-                datasaver.add_result((channel_number_2_v_function, set_v_ch2),
-                                        (self.dmm.volt, get_v))
-                    
-            # Ramp down the voltages to zero so a voltage is not left on the device.
-            for channel_num in range(1,25):
-                self.set_channel_voltage(channel_num, 0.0)
+                datasaver.add_result(results)
                 
+            
+            print("Measurement complete.")
+
+            # Ramp down the voltages to zero so a voltage is not left on the device.
+            self.set_channel_voltage(self.connected_channels, [0.0]*len(self.connected_channels))
+
+
+
         # # Convenient to have for plotting and data access
         # dataset = datasaver.dataset
-          
-        print("Measurement complete.")
 
+          
         return  qc.config.core.db_location # the location of the db file.
 
 
@@ -373,9 +393,8 @@ class Device:
             labels = self.investigation_channels #plunger gates
         else:
             labels =self.connected_channels #all gates
-        dac_state = [None]*len(labels)
-        for i in range(len(labels)):
-            dac_state[i] = self.get_channel_voltage(labels[i]) #function that takes dac key and returns state that channel is in
+        # dac_state = [None]*len(labels)
+        dac_state = self.get_channel_voltage(labels) #function that takes dac key and returns state that channel is in
         return dac_state
 
     def measure(self):
