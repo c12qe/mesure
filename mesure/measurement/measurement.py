@@ -310,8 +310,7 @@ class Device:
         context_meas = Measurement(exp=test_exp, station=station, name='1d_sweep') # create a new meaurement object using the station defined above.
 
         channel_set_points = []
-        results = [None] * len(self.connected_channels + 1)
-
+        results = [] 
         # Register the independent parameters...
         for i, channel in enumerate(self.connected_channels):
             # Perform concatination and use eval to store the .v methods for the channel numbers passed as arugments
@@ -320,7 +319,7 @@ class Device:
             channel_set_points.append(channel_number_v_function)
             context_meas.register_parameter(channel_number_v_function)
             if (channel != sweep_channel):
-                results[i] = ((channel_number_v_function, self.get_channel_voltage(channel)))
+                results.append((channel_number_v_function, self.get_channel_voltage(channel))) # Needs to be inside parenthesis to be a tuple.
 
 
         # ...then register the dependent parameters
@@ -337,17 +336,17 @@ class Device:
             for set_v in voltages_sweep: # for each voltage that we want to set on the qdac for channel '1'
 
                 # Ramp the voltage up slowly using the waiting time function to ensure that the specified slope (default = 1) is not exceeded.
-                self.set_channel_voltage(sweep_channel, set_v)
+                # self.set_channel_voltage(sweep_channel, set_v)
                 outter_bar.update(1) # update outer progress bar
 
 
-                get_v = self.dmm.volt.get()
+                get_v = 0#self.dmm.volt.get()
 
 
                 # change this function to use channel number list
                 # make a tuple of tuples not including 
-                results[-2] = (channel_number_v_sweep_function, set_v)
-                results[-1] = (self.dmm.volt, get_v)
+                results.append((channel_number_v_sweep_function, set_v))
+                results.append((self.dmm.volt, get_v))
 
                 # Save the measurement results into the db.
                 datasaver.add_result(results)
