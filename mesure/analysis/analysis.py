@@ -1,3 +1,4 @@
+from cProfile import label
 import qcodes as qc
 from qcodes.dataset import (
     Measurement,
@@ -6,7 +7,8 @@ from qcodes.dataset import (
     load_by_run_spec,
     load_or_create_experiment,
 )
-
+import numpy as np
+import matplotlib.pyplot as plt
 from qcodes.dataset.plotting import plot_dataset
 
 
@@ -60,14 +62,63 @@ class Analyser:
         """
         dataset = load_by_run_spec(experiment_name=experiment_name, captured_run_id=run_id)
         df = dataset.to_pandas_dataframe()
-        print(f"The data collected for run {run_id} experiment is shown below:")
 
-        print(df.head())
-        plot_dataset(dataset)
+        return df
 
       
           
+    def plot_channel_sweep(self, channels=[], experiment_name="test_device", run_id=1):
+        """Function to visualise a sweep for a given run id for an experiment found in the database specified in the object definition.
+
+        Args:
+            channels (list): The channels you want to visualise. Defaults to [].
+            experiment_name (str): The experiment from which you wish to select your dataset. Defaults to "test_device". 
+            run_id (int): The run id you want to visualise. Defaults to 1.
+        
+        """
+        
+        assert  (len(channels) == 2) or (len(channels) == 1), "Make sure you're only trying to plot for two or one gate."
+        dataset = load_by_run_spec(experiment_name=experiment_name, captured_run_id=run_id)
+        df = dataset.to_pandas_dataframe()
+        x = df.index.get_level_values("qdac_chan{:02d}_v".format(channels[0])).values
+        z = df["DMM_volt"]    
+
+        fig1, ax1 = plt.subplots(constrained_layout=True)
+        gain = 10**5
+        if len(channels) == 2:
+
+            # pre-processing of data for plotting
+            y = df.index.get_level_values("qdac_chan{:02d}_v".format(channels[1])).values
+            x_unique = np.unique(x, return_counts=True)
+            x_unique_values = x_unique[0]
+            x_unique_n = len(x_unique[1])
+
+            y_unique = np.unique(y, return_counts=True)
+            y_unique_values = y_unique[0]
+            y_unique_n = len(y_unique[1])
+
+            z = z.to_numpy() / gain
+            z= z.reshape((x_unique_n, y_unique_n))
+
+            # plot data and set labels
+            CS = ax1.contourf(x_unique_values,y_unique_values,z)
+            ax1.set_title(f'2D Sweep of Channels {channels[0]} and {channels[1]}')
+            ax1.set_xlabel(f'Channel {channels[0]} (V)')
+            ax1.set_ylabel(f'Channel {channels[1]} (V)')
+            cbar = fig1.colorbar(CS)
+            cbar.set_label("I (A)")
 
 
+        else:
+            ax1.set_title(f'1D Sweep of Channels {channels[0]}.')
+            ax1.set_xlabel(f'Channel {channels[0]} (V)')
+            ax1.set_ylabel('I (A)')
+            ax1.plot(x,z)
+        
+        
+        plt.show()
+            
 
-    
+
+        
+       

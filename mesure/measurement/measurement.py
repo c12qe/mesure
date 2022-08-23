@@ -272,8 +272,8 @@ class Device:
                     # # make a tuple of tuples not including 
                     results[-1] = (self.dmm.volt, get_v)
 
-                # Save the measurement results into the db.
-                datasaver.add_result(*results)
+                    # Save the measurement results into the db.
+                    datasaver.add_result(*results)
                 
             
         print("Measurement complete.")
