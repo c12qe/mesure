@@ -84,7 +84,7 @@ class Analyser:
         z = df["DMM_volt"]    
 
         fig1, ax1 = plt.subplots(constrained_layout=True)
-        gain = 10**5
+        gain = 10**7
         if len(channels) == 2:
 
             # pre-processing of data for plotting
@@ -98,11 +98,11 @@ class Analyser:
             y_unique_n = len(y_unique[1])
 
             z = z.to_numpy() / gain
-            z= z.reshape((x_unique_n, y_unique_n))
+            z= np.abs(z.reshape((x_unique_n, y_unique_n)))
 
             # plot data and set labels
-            CS = ax1.contourf(x_unique_values,y_unique_values,z)
-            ax1.set_title(f'2D Sweep of Channels {channels[0]} and {channels[1]}')
+            CS = ax1.contourf(x_unique_values,y_unique_values,z, levels=1000)
+            # ax1.set_title(f'2D Sweep of Channels {channels[0]} and {channels[1]}')
             ax1.set_xlabel(f'Channel {channels[0]} (V)')
             ax1.set_ylabel(f'Channel {channels[1]} (V)')
             cbar = fig1.colorbar(CS)
@@ -110,7 +110,7 @@ class Analyser:
 
 
         else:
-            ax1.set_title(f'1D Sweep of Channels {channels[0]}.')
+            # ax1.set_title(f'1D Sweep of Channel {channels[0]}')
             ax1.set_xlabel(f'Channel {channels[0]} (V)')
             ax1.set_ylabel('I (A)')
             ax1.plot(x,z)
