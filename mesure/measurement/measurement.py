@@ -292,7 +292,7 @@ class Device:
         return  qc.config.core.db_location # the location of the db file.
 
     @exception_handler_general   
-    def dc_2d_gate_sweep_all_gates(self, channel_number_sd, experiment_name="test", device_name ="test_device", database_file="test_measurements.db", max_voltage_sd=1, min_voltage_sd = 0,max_voltage_all_gates=1, min_voltage_all_gates= 0, 
+    def all_gates_coulomb_diamonds(self, channel_number_sd, experiment_name="test", device_name ="test_device", database_file="test_measurements.db", max_voltage_sd=1, min_voltage_sd = 0,max_voltage_all_gates=1, min_voltage_all_gates= 0, 
                     number_of_steps_sd=100, number_of_steps_all_gates= 100):
         """Function to perform a measurement sweep of 2 gates on the device.
 
@@ -393,11 +393,11 @@ class Device:
                     get_v = self.dmm.volt.get()
 
          
-                    # Register the independent parameters...
                     for i, channel in enumerate(self.connected_channels):
                         channel_number_abrev = "self.qdac.ch{:02d}.v".format(channel)
                         channel_number_v_function = eval(channel_number_abrev)
-                        results[i] = (channel_number_v_function, set_v_ch2) # Needs to be inside parenthesis to be a tuple.
+                        if channel != channel_number_sd:
+                            results[i] = (channel_number_v_function, set_v_ch2) # Needs to be inside parenthesis to be a tuple.
 
                     results[-1] = (self.dmm.volt, get_v)
 
@@ -667,11 +667,16 @@ class Device:
 
         """
         if self.dac_open:
+            # Ramp down the voltages to zero so a voltage is not left on the device.
+            # self.set_channel_voltage(self.connected_channels, [0.0]*len(self.connected_channels))
+            # print(f"The following channels have ramped down to 0.0V: {self.connected_channels}.")
             self.qdac.close()
             self.dac_open = False
         if self.dmm_open:
-            self.dmm.close()
-            self.dac_open = False
+            # Ramp down the voltages to zero so a voltage is not left on the device.
+            # self.set_channel_voltage(self.connected_channels, [0.0]*len(self.connected_channels))
+            # print(f"The following channels have ramped down to 0.0V: {self.connected_channels}.")
+            self.qdac.close()
         print("Any connection to the DAC and DMM has been closed.")
 
 

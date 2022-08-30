@@ -105,6 +105,10 @@ class Analyser:
             # ax1.set_title(f'2D Sweep of Channels {channels[0]} and {channels[1]}')
             ax1.set_xlabel(f'Channel {channels[0]} (V)')
             ax1.set_ylabel(f'Channel {channels[1]} (V)')
+            # ax1.set_yticks([0, 0.1, 0.2, 0.3, 0.4])
+
+            # labels = [-1.50,-0.75,0.00,0.75,1.50]
+            # ax1.set_yticklabels(labels)
             cbar = fig1.colorbar(CS)
             cbar.set_label("I (A)")
 
