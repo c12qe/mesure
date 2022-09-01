@@ -85,6 +85,8 @@ class Analyser:
 
         fig1, ax1 = plt.subplots(constrained_layout=True)
         gain = 10**7
+        z = z.to_numpy() / gain
+
         if len(channels) == 2:
 
             # pre-processing of data for plotting
